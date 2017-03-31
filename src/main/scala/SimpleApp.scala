@@ -24,15 +24,15 @@ object SimpleApp {
     val trainingFile = new File("").getAbsolutePath() + "/data/train.csv"
     val testFile = new File("").getAbsolutePath() + "/data/test.csv"
 
+    val persons: RDD[Person] = Person.readBatch(sc, trainingFile)
+
+    persons.take(5).foreach(println)
     // val categoricalFeaturesInfo = Map[Int, Int]()
     // val impurity = "variance"
     // val maxDepth = 5
     // val maxBins = 32
 
-    
-    val csv: RDD[String] = sc.textFile(trainingFile).cache()
 
-    println("Done")
     sc.stop()
   }
 
