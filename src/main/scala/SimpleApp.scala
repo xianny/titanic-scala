@@ -21,17 +21,18 @@ object SimpleApp {
     val conf = new SparkConf().setAppName("Simple Application").setMaster("local")
     val sc = new SparkContext(conf)
 
-    val trainingFile = new File("").getAbsolutePath() + "/data/train.csv"
-    val testFile = new File("").getAbsolutePath() + "/data/test.csv"
+    val trainingFile = new File("").getAbsolutePath + "/data/train.csv"
+    val testFile = new File("").getAbsolutePath + "/data/test.csv"
 
-    val persons: RDD[Person] = Person.readBatch(sc, trainingFile)
+    val sqlContext = new org.apache.spark.sql.SQLContext(sc)
 
-    persons.take(5).foreach(println)
-    // val categoricalFeaturesInfo = Map[Int, Int]()
-    // val impurity = "variance"
-    // val maxDepth = 5
-    // val maxBins = 32
-
+    val df = sqlContext.read
+      .format("com.databricks.spark.csv")
+      .option("header", "true") // Use first line of all files as header
+      .option("inferSchema", "true") // Automatically infer data types
+      .load(trainingFile)
+    // Displays the content of the DataFrame to stdout
+    df.show()
 
     sc.stop()
   }
