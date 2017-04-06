@@ -6,12 +6,13 @@ import org.apache.spark.SparkConf
 import org.apache.spark.ml.Pipeline
 import org.apache.spark.ml.classification.DecisionTreeClassifier
 import org.apache.spark.ml.classification.DecisionTreeClassificationModel
-import org.apache.spark.ml.feature.{StringIndexer, VectorAssembler}
+import org.apache.spark.ml.feature.{StringIndexer, VectorAssembler, VectorIndexer}
 import org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator
 import java.io.File
 
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.ml.linalg.Vectors
-import org.apache.spark.sql.DataFrame
 
 object SimpleApp {
 
@@ -23,67 +24,103 @@ object SimpleApp {
     val trainingFile = new File("").getAbsolutePath + "/data/train.csv"
     val testFile = new File("").getAbsolutePath + "/data/test.csv"
 
-    val sqlContext = new org.apache.spark.sql.SQLContext(sc)
+    //val sqlContext = new org.apache.spark.sql.SQLContext(sc)
+    val spark = SparkSession
+      .builder.master("local")
+      .appName("SparkSessionnopipes")
+      //.config("spark.sql.warehouse.dir", warehouseLocation)
+      //.enableHiveSupport()
+      .getOrCreate()
 
-    val trainingData = sqlContext.read
+    def stripNulls(df: Dataset[Row]): Dataset[Row] = {
+      df.filter(!_.anyNull)
+    }
+    val trainingData = spark.read
       .format("com.databricks.spark.csv")
       .option("header", "true") // Use first line of all files as header
       .option("inferSchema", "true") // Automatically infer data types
       .load(trainingFile)
+      .select("Survived", "Sex", "Parch", "SibSp")
+      .filter(!_.anyNull)
 
-    val testData = sqlContext.read
+
+    val testData = spark.read
       .format("com.databricks.spark.csv")
       .option("header", "true") // Use first line of all files as header
       .option("inferSchema", "true") // Automatically infer data types
       .load(testFile)
-
-    val dataFrame = sqlContext.createDataFrame(Seq(
-      (0, 1, 1, 1.0),
-      (1, 2, 2, 2.0),
-      (0, 2, 3, 3.0)
-    )).toDF("Survived", "f1", "f2", "f3")
-
-
-    // add columnname_index for each column
-    val indexCols: Array[org.apache.spark.ml.PipelineStage] = trainingData.columns.map { cname =>
-      new StringIndexer()
-        .setInputCol(cname)
-        .setOutputCol(s"${cname}_index")
-        .setHandleInvalid("skip")
-    }
+    .drop()
 
     val labelNames = Array("Survived", "Survived_index")
-    val indexedFeatureNames = trainingData.columns.filterNot(labelNames.contains(_)).map(c => s"${c}")
+    val indexedFeatureNames = trainingData.columns.filterNot(labelNames.contains(_)).map(c => s"${c}_index")
+
+//    def multiIndexer(arrInput: Array[String]) : Array[VectorIndexer] =
+
+//    def indexer(inputCol:String) = new VectorIndexer()
+//      .setInputCol(inputCol)
+//      .setOutputCol(s"${cname}_index")
+//      .setMaxCategories(10)
+
+
+    val indexers: Array[org.apache.spark.ml.PipelineStage] = trainingData.columns.map { cname =>
+          new StringIndexer()
+            .setInputCol(cname)
+            .setOutputCol(s"${cname}_index")
+            .setHandleInvalid("skip")
+        }
     val aggregateFeatures = new VectorAssembler()
       .setInputCols(indexedFeatureNames) // f1_index, f2_index, f3_index
       .setOutputCol("features")
 
+//
+//    val indexerModel = indexer.fit(dataFrame)
 
-    ////    // Automatically identify categorical features, and index them.
-    ////    val featureIndexer = new VectorIndexer()
-    ////      .setInputCol("features")
-    ////      .setOutputCol("indexedFeatures")
-    ////      .setMaxCategories(4) // features with > 4 distinct values are treated as continuous
-    //
+//    val categoricalFeatures: Set[Int] = indexerModel.categoryMaps.keys.toSet
+//    println(s"Chose ${categoricalFeatures.size} categorical features: " +
+//      categoricalFeatures.mkString(", "))
+//
+//    // Create new column "indexed" with categorical values transformed to indices
+//    val indexedData = indexerModel.transform(dataFrame)
+//    indexedData.show()
+
+
+
+    // add columnname_index for each column
+//    val indexCols: Array[org.apache.spark.ml.PipelineStage] = trainingData.columns.map { cname =>
+//      new StringIndexer()
+//        .setInputCol(cname)
+//        .setOutputCol(s"${cname}_index")
+//        .setHandleInvalid("skip")
+//    }
+//
+
+
+//
+//    ////    // Automatically identify categorical features, and index them.
+//    ////    val featureIndexer = new VectorIndexer()
+//    ////      .setInputCol("features")
+//    ////      .setOutputCol("indexedFeatures")
+//    ////      .setMaxCategories(4) // features with > 4 distinct values are treated as continuous
+//    //
     // Train a DecisionTree model.
     val dt = new DecisionTreeClassifier()
-      .setLabelCol("Survived_index")
+      .setLabelCol("Survived")
       .setFeaturesCol("features")
-    //
-    //    // Convert indexed labels back to original labels.
-    ////    val labelConverter = new IndexToString()
-    ////      .setInputCol("prediction")
-    ////      .setOutputCol("predictedLabel")
-    ////      .setLabels(labelIndexer.labels)
-
-    // Chain indexers and tree in a Pipeline
+//    //
+//    //    // Convert indexed labels back to original labels.
+//    ////    val labelConverter = new IndexToString()
+//    ////      .setInputCol("prediction")
+//    ////      .setOutputCol("predictedLabel")
+//    ////      .setLabels(labelIndexer.labe
+//
+//    // Chain indexers and tree in a Pipeline
     val pipeline = new Pipeline()
-      .setStages(indexCols)
+      .setStages(  indexers ++ Array(aggregateFeatures, dt)  ) //, indexerModel
 
     // Train model.  This also runs the indexers.
-    val model = pipeline.fit(trainingData)
+    val model = pipeline.fit(trainingData.drop())
 
-    val transformed = model.transform(trainingData)
+    val transformed = model.transform(testData)
 
     transformed.show()
     //
